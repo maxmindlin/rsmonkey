@@ -18,7 +18,7 @@ fn main() {
                 rl.add_history_entry(line.as_str());
                 let mut lexer = Lexer::new(line);
                 let mut tok = lexer.next_token();
-                while tok != TokenType::EOF {
+                while tok.t_type != TokenType::EOF {
                     println!("{:?}", tok);
                     tok = lexer.next_token();
                 };
