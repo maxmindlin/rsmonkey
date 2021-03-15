@@ -8,4 +8,5 @@ edition = "2018"
 
 [dependencies]
 rsmonkey-parser = { path = "../rsmonkey-parser" }
+rsmonkey-eval = { path = "../rsmonkey-eval" }
 rustyline = "8.0.0"

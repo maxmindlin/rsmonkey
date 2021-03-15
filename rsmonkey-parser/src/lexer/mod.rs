@@ -1,7 +1,7 @@
 mod token;
 
-pub use token::{Token, TokenKind};
 use token::is_to_keyword;
+pub use token::{Token, TokenKind};
 
 #[derive(Default)]
 pub struct Lexer {
@@ -34,7 +34,7 @@ impl Lexer {
         let mut i = vec![self.input[start]];
         while self.peek().is_some() && self.peek().unwrap().is_alphabetic() {
             i.push(*self.next().unwrap());
-        };
+        }
         i.iter().collect()
     }
 
@@ -43,70 +43,60 @@ impl Lexer {
         let mut i = vec![self.input[start]];
         while self.peek().is_some() && self.peek().unwrap().is_numeric() {
             i.push(*self.next().unwrap());
-        };
+        }
         i.iter().collect()
     }
 
     pub fn next_token(&mut self) -> Token {
         match self.next() {
-            Some(c) => {
-                match *c {
-                    '=' => {
-                        match self.peek() {
-                            Some(pc) => {
-                                match *pc {
-                                    '=' => {
-                                        let mut lit = '='.to_string();
-                                        lit.push(*self.next().unwrap());
-                                        Token::new(TokenKind::EQ, lit)
-                                    },
-                                    _ => Token::new(TokenKind::Assign, '='.to_string())
-                                }
-                            },
-                            None => Token::new(TokenKind::Assign, '='.to_string()),
+            Some(c) => match *c {
+                '=' => match self.peek() {
+                    Some(pc) => match *pc {
+                        '=' => {
+                            let mut lit = '='.to_string();
+                            lit.push(*self.next().unwrap());
+                            Token::new(TokenKind::EQ, lit)
                         }
+                        _ => Token::new(TokenKind::Assign, '='.to_string()),
                     },
-                    ';' => Token::new(TokenKind::Semicolon, c.to_string()),
-                    '(' => Token::new(TokenKind::LParen, c.to_string()),
-                    ')' => Token::new(TokenKind::RParen, c.to_string()),
-                    ',' => Token::new(TokenKind::Comma, c.to_string()),
-                    '+' => Token::new(TokenKind::Plus, c.to_string()),
-                    '{' => Token::new(TokenKind::LBrace, c.to_string()),
-                    '}' => Token::new(TokenKind::RBrace, c.to_string()),
-                    '-' => Token::new(TokenKind::Minus, c.to_string()),
-                    '!' => {
-                        match self.peek() {
-                            Some(pc) => {
-                                match *pc {
-                                    '=' => {
-                                        let mut lit = '!'.to_string();
-                                        lit.push(*self.next().unwrap());
-                                        Token::new(TokenKind::NEQ, lit)
-                                    },
-                                    _ => Token::new(TokenKind::Bang, '!'.to_string()),
-                                }
-                            },
-                            _ => Token::new(TokenKind::Bang, '!'.to_string()),
+                    None => Token::new(TokenKind::Assign, '='.to_string()),
+                },
+                ';' => Token::new(TokenKind::Semicolon, c.to_string()),
+                '(' => Token::new(TokenKind::LParen, c.to_string()),
+                ')' => Token::new(TokenKind::RParen, c.to_string()),
+                ',' => Token::new(TokenKind::Comma, c.to_string()),
+                '+' => Token::new(TokenKind::Plus, c.to_string()),
+                '{' => Token::new(TokenKind::LBrace, c.to_string()),
+                '}' => Token::new(TokenKind::RBrace, c.to_string()),
+                '-' => Token::new(TokenKind::Minus, c.to_string()),
+                '!' => match self.peek() {
+                    Some(pc) => match *pc {
+                        '=' => {
+                            let mut lit = '!'.to_string();
+                            lit.push(*self.next().unwrap());
+                            Token::new(TokenKind::NEQ, lit)
                         }
+                        _ => Token::new(TokenKind::Bang, '!'.to_string()),
                     },
-                    '*' => Token::new(TokenKind::Asterisk, c.to_string()),
-                    '/' => Token::new(TokenKind::Slash, c.to_string()),
-                    '<' => Token::new(TokenKind::LT, c.to_string()),
-                    '>' => Token::new(TokenKind::GT, c.to_string()),
-                    _ if c.is_whitespace() => self.next_token(),
-                    _ if c.is_alphabetic() => {
-                        let literal = self.read_identifier();
-                        match is_to_keyword(&literal) {
-                            Some(key_token) => Token::new(key_token, literal),
-                            None => Token::new(TokenKind::Ident, literal),
-                        }
+                    _ => Token::new(TokenKind::Bang, '!'.to_string()),
+                },
+                '*' => Token::new(TokenKind::Asterisk, c.to_string()),
+                '/' => Token::new(TokenKind::Slash, c.to_string()),
+                '<' => Token::new(TokenKind::LT, c.to_string()),
+                '>' => Token::new(TokenKind::GT, c.to_string()),
+                _ if c.is_whitespace() => self.next_token(),
+                _ if c.is_alphabetic() => {
+                    let literal = self.read_identifier();
+                    match is_to_keyword(&literal) {
+                        Some(key_token) => Token::new(key_token, literal),
+                        None => Token::new(TokenKind::Ident, literal),
                     }
-                    _ if c.is_numeric() => {
-                        let literal = self.read_numeric();
-                        Token::new(TokenKind::Int, literal)
-                    },
-                    _ => Token::new(TokenKind::Illegal, c.to_string()),
                 }
+                _ if c.is_numeric() => {
+                    let literal = self.read_numeric();
+                    Token::new(TokenKind::Int, literal)
+                }
+                _ => Token::new(TokenKind::Illegal, c.to_string()),
             },
             None => Token::new(TokenKind::EOF, "".to_string()),
         }
@@ -133,17 +123,17 @@ mod tests {
             TokenKind::EOF,
         ];
 
-        exp.iter()
-            .for_each(|c| {
-                let tok = l.next_token();
-                assert_eq!(tok.t_type, *c);
-            });
+        exp.iter().for_each(|c| {
+            let tok = l.next_token();
+            assert_eq!(tok.t_type, *c);
+        });
     }
 
     #[test]
     fn test_operators() {
         let i = "!-/*5;
-5 < 10 > != 5 ==;".to_string();
+5 < 10 > != 5 ==;"
+            .to_string();
 
         let mut l = Lexer::new(i);
         let exp = vec![
@@ -163,11 +153,10 @@ mod tests {
             TokenKind::Semicolon,
         ];
 
-        exp.iter()
-            .for_each(|c| {
-                let tok = l.next_token();
-                assert_eq!(tok.t_type, *c);
-            });
+        exp.iter().for_each(|c| {
+            let tok = l.next_token();
+            assert_eq!(tok.t_type, *c);
+        });
     }
 
     #[test]
@@ -185,11 +174,10 @@ mod tests {
             TokenKind::Return,
         ];
 
-        exp.iter()
-            .for_each(|c| {
-                let tok = l.next_token();
-                assert_eq!(tok.t_type, *c);
-            });
+        exp.iter().for_each(|c| {
+            let tok = l.next_token();
+            assert_eq!(tok.t_type, *c);
+        });
     }
 
     #[test]
@@ -200,7 +188,8 @@ let add = fn(x, y) {
     x + y;
 };
 
-let result = add(five, ten);".to_string();
+let result = add(five, ten);"
+            .to_string();
 
         let mut l = Lexer::new(i);
         let exp = vec![
@@ -243,10 +232,9 @@ let result = add(five, ten);".to_string();
             TokenKind::EOF,
         ];
 
-        exp.iter()
-            .for_each(|c| {
-                let tok = l.next_token();
-                assert_eq!(tok.t_type, *c);
-            });
+        exp.iter().for_each(|c| {
+            let tok = l.next_token();
+            assert_eq!(tok.t_type, *c);
+        });
     }
 }
