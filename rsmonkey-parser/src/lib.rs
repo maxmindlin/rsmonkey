@@ -35,6 +35,7 @@ enum Precendence {
     Product,
     Prefix,
     Call,
+    Index,
 }
 
 impl From<TokenKind> for Precendence {
@@ -50,6 +51,7 @@ impl From<TokenKind> for Precendence {
             Slash => Self::Product,
             Asterisk => Self::Product,
             LParen => Self::Call,
+            LBracket => Self::Index,
             _ => Self::Lowest,
         }
     }
@@ -72,8 +74,10 @@ fn map_prefix_fn(t_type: &TokenKind) -> Option<PrefixParseFn> {
         True => Some(Parser::parse_boolean),
         False => Some(Parser::parse_boolean),
         LParen => Some(Parser::parse_grouped_expr),
+        LBracket => Some(Parser::parse_array_literal),
         If => Some(Parser::parse_if_expr),
         Function => Some(Parser::parse_fn_expr),
+        Str => Some(Parser::parse_str_literal),
         _ => None,
     }
 }
@@ -90,6 +94,7 @@ fn map_infix_fn(t_type: &TokenKind) -> Option<InfixParseFn> {
         LT => Some(Parser::parse_infix_expr),
         GT => Some(Parser::parse_infix_expr),
         LParen => Some(Parser::parse_call_expr),
+        LBracket => Some(Parser::parse_index_expr),
         _ => None,
     }
 }
@@ -257,14 +262,29 @@ impl Parser {
         Ok(params)
     }
 
+    fn parse_index_expr(&mut self, lhs: ExprKind) -> Option<ExprKind> {
+        self.next_token();
+        let index = self.parse_expression(Precendence::Lowest)?;
+        if !self.expect_peek(TokenKind::RBracket) {
+            None
+        } else {
+            Some(ExprKind::Index(Box::new(lhs), Box::new(index)))
+        }
+    }
+
+    fn parse_array_literal(&mut self) -> Option<ExprKind> {
+        let elems = self.parse_expr_list(TokenKind::RBracket).ok()?;
+        Some(ExprKind::Array(elems))
+    }
+
     fn parse_call_expr(&mut self, func: ExprKind) -> Option<ExprKind> {
-        let args = self.parse_call_args().ok()?;
+        let args = self.parse_expr_list(TokenKind::RParen).ok()?;
         Some(ExprKind::Call(Box::new(func), args))
     }
 
-    fn parse_call_args(&mut self) -> Result<Box<Vec<ExprKind>>, ()> {
+    fn parse_expr_list(&mut self, end: TokenKind) -> Result<Box<Vec<ExprKind>>, ()> {
         let mut args: Vec<ExprKind> = Vec::new();
-        if self.peek_token.t_type == TokenKind::RParen {
+        if self.peek_token.t_type == end {
             self.next_token();
             return Ok(Box::new(args));
         }
@@ -292,7 +312,7 @@ impl Parser {
             };
         }
 
-        if !self.expect_peek(TokenKind::RParen) {
+        if !self.expect_peek(end) {
             return Err(());
         }
 
@@ -354,6 +374,10 @@ impl Parser {
                 None
             }
         }
+    }
+
+    fn parse_str_literal(&mut self) -> Option<ExprKind> {
+        Some(ExprKind::Str(self.curr_token.literal.clone()))
     }
 
     fn parse_boolean(&mut self) -> Option<ExprKind> {
@@ -487,6 +511,12 @@ mod tests {
         vec!("add((((a + b) + ((c * d) / f)) + g))");
         "nested precedence call"
     )]
+    #[test_case(
+        String::from("a * [1, 2, 3][b * c] * d"),
+        1,
+        vec!("((a * ([1,2,3][(b * c)])) * d)");
+        "array precedence"
+    )]
     fn parse_stmt(input: String, len: usize, exp_literals: Vec<&str>) {
         let (p, prgrm) = setup_prgm(input);
 
@@ -588,5 +618,39 @@ mod tests {
             StmtKind::Return(v) => assert_eq!(*v, exp_val),
             _ => panic!("unexpected stmtkind {:#?}", stmt),
         };
+    }
+
+    #[test_case("[1, 2]", ExprKind::Array(
+            Box::new(vec![ExprKind::Int(1), ExprKind::Int(2)])
+        ); "int array")]
+    fn parse_array_literal(input: &str, exp: ExprKind) {
+        let (p, prgrm) = setup_prgm(input.to_string());
+
+        if !p.errors.is_empty() {
+            panic!("{} parser errors present: {:#?}", p.errors.len(), p.errors);
+        }
+
+        assert_eq!(prgrm.stmts.len(), 1);
+        let stmt = &prgrm.stmts[0];
+        match stmt {
+            StmtKind::Expr(e) => assert_eq!(*e, exp),
+            _ => panic!("unexpected stmtkind {:#?}", stmt),
+        }
+    }
+
+    #[test_case(r#""hello world";"#, "hello world"; "hello str literal")]
+    fn parse_str_literal(input: &str, exp: &str) {
+        let (p, prgrm) = setup_prgm(input.to_string());
+
+        if !p.errors.is_empty() {
+            panic!("{} parser errors present: {:#?}", p.errors.len(), p.errors);
+        }
+
+        assert_eq!(prgrm.stmts.len(), 1);
+        let stmt = &prgrm.stmts[0];
+        match stmt {
+            StmtKind::Expr(ExprKind::Str(s)) => assert_eq!(*s, exp.to_string()),
+            _ => panic!("unexpected stmtkind {:#?}", stmt),
+        }
     }
 }

@@ -28,6 +28,9 @@ pub enum StmtKind {
 pub enum ExprKind {
     Ident(Identifier),
     Int(i64),
+    Str(String),
+    Array(Box<Vec<ExprKind>>),
+    Index(Box<ExprKind>, Box<ExprKind>),
     Prefix(TokenKind, Box<ExprKind>),
     Infix(TokenKind, Box<ExprKind>, Box<ExprKind>),
     Boolean(bool),
@@ -89,6 +92,12 @@ impl fmt::Display for ExprKind {
         match self {
             Self::Ident(id) => write!(f, "{}", id.name),
             Self::Int(n) => write!(f, "{}", n),
+            Self::Str(s) => write!(f, "{}", s),
+            Self::Array(elems) => {
+                let elems_str = elems.iter().map(|e| e.to_string()).collect::<Vec<String>>().join(",");
+                write!(f, "[{}]", elems_str)
+            },
+            Self::Index(lhs, idx) => write!(f, "({}[{}])", lhs, idx),
             Self::Prefix(op, rhs) => write!(f, "({}{})", op, rhs),
             Self::Infix(op, lhs, rhs, ..) => write!(f, "({} {} {})", lhs, op, rhs),
             Self::Boolean(b) => write!(f, "{}", b),

@@ -4,6 +4,7 @@ pub enum TokenKind {
     EOF,
     Ident,
     Int,
+    Str,
 
     // Operators
     Assign,
@@ -24,6 +25,9 @@ pub enum TokenKind {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
+    Colon,
 
     // Keywords
     Function,
@@ -55,6 +59,9 @@ impl std::fmt::Display for TokenKind {
             RParen => write!(f, ")"),
             LBrace => write!(f, "{{"),
             RBrace => write!(f, "}}"),
+            LBracket => write!(f, "["),
+            RBracket => write!(f, "]"),
+            Colon => write!(f, ":"),
             _ => unreachable!(),
         }
     }

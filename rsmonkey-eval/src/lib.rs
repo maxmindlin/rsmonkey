@@ -2,7 +2,7 @@ mod env;
 mod object;
 
 pub use env::Env;
-use object::{EvalError, Object, FuncLiteral};
+use object::{BuiltinKind, EvalError, FuncLiteral, Object};
 use rsmonkey_parser::{BlockStmt, ExprKind, Identifier, NodeKind, Program, StmtKind, TokenKind};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -28,20 +28,18 @@ fn eval_stmt(stmt: &StmtKind, env: EnvPointer) -> Rc<Object> {
                 let val = eval_expr(e, env);
                 default_if_error(val, |obj| Rc::new(Object::Return(obj)))
             }
-        }
-        Let(id, m_exp) => {
-            match m_exp {
-                Some(e) => {
-                    let val = eval_expr(e, Rc::clone(&env));
-                    default_if_error(val, |obj| {
-                        env.borrow_mut().set(&id, obj);
-                        Rc::new(Object::Null)
-                    })
-                },
-                None => {
-                    env.borrow_mut().set(&id, Rc::new(Object::Null));
+        },
+        Let(id, m_exp) => match m_exp {
+            Some(e) => {
+                let val = eval_expr(e, Rc::clone(&env));
+                default_if_error(val, |obj| {
+                    env.borrow_mut().set(&id, obj);
                     Rc::new(Object::Null)
-                }
+                })
+            }
+            None => {
+                env.borrow_mut().set(&id, Rc::new(Object::Null));
+                Rc::new(Object::Null)
             }
         },
     }
@@ -50,12 +48,23 @@ fn eval_stmt(stmt: &StmtKind, env: EnvPointer) -> Rc<Object> {
 fn eval_expr(expr: &ExprKind, env: EnvPointer) -> Rc<Object> {
     use ExprKind::*;
     match expr {
+        Array(v) => {
+            let elems = eval_exprs(v, env);
+            if elems.len() == 1 {
+                let first = elems.first().unwrap();
+                if let Object::Error(_) = **first {
+                    return Rc::clone(first);
+                }
+            }
+            Rc::new(Object::Array(elems))
+        }
         Int(i) => Rc::new(Object::Int(*i)),
         Boolean(b) => Rc::new(Object::Boolean(*b)),
+        Str(s) => Rc::new(Object::Str(s.to_owned())),
         Prefix(op, e) => {
             let val = eval_expr(e, env);
             default_if_error(val, |obj| Rc::new(eval_prefix_expr(&op, obj)))
-        },
+        }
         Infix(op, lhs, rhs) => {
             let clhs = eval_expr(lhs, Rc::clone(&env));
             if let Object::Error(_) = *clhs {
@@ -66,7 +75,7 @@ fn eval_expr(expr: &ExprKind, env: EnvPointer) -> Rc<Object> {
                 return crhs;
             }
             Rc::new(eval_infix_expr(op, &clhs, &*crhs))
-        },
+        }
         If(cond, conseq, alt) => {
             let val = eval_expr(cond, Rc::clone(&env));
             match *val {
@@ -74,9 +83,13 @@ fn eval_expr(expr: &ExprKind, env: EnvPointer) -> Rc<Object> {
                 _ if is_truthy(&val) => eval_block_stmt(conseq, env),
                 _ => eval_block_stmt(alt, env),
             }
-        },
+        }
         Ident(i) => eval_ident(&i, env),
-        Fn(i, block) => Rc::new(Object::Func(Rc::new(FuncLiteral::new(i.clone(), block.clone(), env)))),
+        Fn(i, block) => Rc::new(Object::Func(Rc::new(FuncLiteral::new(
+            i.clone(),
+            block.clone(),
+            env,
+        )))),
         Call(fexpr, args) => {
             let func = eval_expr(&fexpr, Rc::clone(&env));
             if let Object::Error(_) = *func {
@@ -91,6 +104,38 @@ fn eval_expr(expr: &ExprKind, env: EnvPointer) -> Rc<Object> {
             }
             apply_fn(&func, &args)
         }
+        Index(lexpr, iexpr) => {
+            let lhs = eval_expr(&lexpr, Rc::clone(&env));
+            if let Object::Error(_) = *lhs {
+                return lhs;
+            }
+            let index = eval_expr(&iexpr, env);
+            if let Object::Error(_) = *index {
+                return index;
+            }
+            eval_index_expr(&lhs, &index)
+        }
+    }
+}
+
+fn eval_index_expr(lhs: &Object, index: &Object) -> Rc<Object> {
+    use Object::*;
+    match (lhs, index) {
+        (Array(a), _) => eval_array_index(a, index),
+        _ => new_error_pntr(EvalError::InvalidIndexOp((*lhs).clone())),
+    }
+}
+
+fn eval_array_index(array: &Vec<Rc<Object>>, index: &Object) -> Rc<Object> {
+    match index {
+        Object::Int(i) => match i {
+            _ if *i < 0 => Rc::new(Object::Null),
+            _ => match array.get(*i as usize) {
+                Some(o) => Rc::clone(o),
+                None => Rc::new(Object::Null),
+            },
+        }
+        _ => new_error_pntr(EvalError::InvalidUsage("invalid index type".to_string())),
     }
 }
 
@@ -113,10 +158,11 @@ fn apply_fn(func: &Object, args: &Vec<Rc<Object>>) -> Rc<Object> {
             let eval = eval_block_stmt(&f_lit.body, env);
             match &*eval {
                 Object::Return(v) => Rc::clone(v),
-                _ => eval
+                _ => eval,
             }
-        },
-        _ => Rc::new(Object::Error(Rc::new(EvalError::NonFunction((*func).clone())))),
+        }
+        Object::Builtin(b) => b.apply(args),
+        _ => new_error_pntr(EvalError::NonFunction((*func).clone()))
     }
 }
 
@@ -139,19 +185,41 @@ fn is_truthy(obj: &Object) -> bool {
 
 fn eval_ident(id: &Identifier, env: EnvPointer) -> Rc<Object> {
     let def = Object::Error(Rc::new(EvalError::UnknownIdent(id.clone())));
-    env.borrow().get(id).unwrap_or(Rc::new(def))
+    match env.borrow().get(id) {
+        Some(ro) => ro,
+        None => match BuiltinKind::is_from(&id.name) {
+            None => Rc::new(def),
+            Some(built) => Rc::new(Object::Builtin(built)),
+        },
+    }
 }
 
 fn eval_infix_expr(op: &TokenKind, lhs: &Object, rhs: &Object) -> Object {
     use Object::*;
     match (lhs, rhs, op) {
         (Int(i), Int(j), _) => eval_int_infix(op, *i, *j),
+        (Str(s1), Str(s2), _) => eval_str_infix(op, &s1, &s2),
+        (Int(i), Str(s), TokenKind::Plus) => Object::Str(i.to_string() + s),
+        (Str(s), Int(i), TokenKind::Plus) => Object::Str(s.to_owned() + &i.to_string()),
         (_, _, TokenKind::EQ) => Boolean(lhs == rhs),
         (_, _, TokenKind::NEQ) => Boolean(lhs != rhs),
         _ => Error(Rc::new(EvalError::UnknownInfixOp(
             *op,
             lhs.clone(),
             rhs.clone(),
+        ))),
+    }
+}
+
+fn eval_str_infix(op: &TokenKind, s1: &str, s2: &str) -> Object {
+    use Object::*;
+    use TokenKind as TK;
+    match op {
+        TK::Plus => Str(s1.to_string() + s2),
+        _ => Error(Rc::new(EvalError::UnknownInfixOp(
+            *op,
+            Str(s1.to_string()),
+            Str(s2.to_string()),
         ))),
     }
 }
@@ -184,7 +252,10 @@ fn eval_minus_prefix_op(rhs: Rc<Object>) -> Object {
     use Object::*;
     match *rhs {
         Int(i) => Int(-i),
-        _ => Error(Rc::new(EvalError::UnknownPrefixOp(TokenKind::Minus, (*rhs).clone()))),
+        _ => Error(Rc::new(EvalError::UnknownPrefixOp(
+            TokenKind::Minus,
+            (*rhs).clone(),
+        ))),
     }
 }
 
@@ -228,6 +299,10 @@ fn default_if_error<F: Fn(Rc<Object>) -> Rc<Object>>(obj: Rc<Object>, wrap: F) -
         Object::Error(_) => obj,
         _ => wrap(obj),
     }
+}
+
+pub(crate) fn new_error_pntr(err: EvalError) -> Rc<Object> {
+    Rc::new(Object::Error(Rc::new(err)))
 }
 
 #[cfg(test)]
@@ -350,6 +425,14 @@ addTwo(2);",
         };
     }
 
+    #[test_case(r#""hello world!""#, Object::Str("hello world!".to_string()); "hello object")]
+    #[test_case(r#""hello " + "world!""#, Object::Str("hello world!".to_string()); "add strings")]
+    #[test_case(r#"1 + "hello!""#, Object::Str("1hello!".to_string()); "int + string")]
+    #[test_case(r#""hello" + 2"#, Object::Str("hello2".to_string()); "string + int")]
+    fn test_str_obj(input: &str, exp: Object) {
+        assert_eq!(*get_eval_output(input.to_string()), exp);
+    }
+
     #[test_case("if (true) {10}", Object::Int(10); "base case")]
     #[test_case("if (false) {10}", Object::Null; "missing alt")]
     #[test_case("if (1) {10}", Object::Int(10); "int is truthy")]
@@ -370,6 +453,11 @@ addTwo(2);",
         };
     }
 
+    #[test_case(r#"len("hello!")"#, Object::Int(6); "len str")]
+    fn test_builtins(input: &str, exp: Object) {
+        assert_eq!(*get_eval_output(input.to_string()), exp);
+    }
+
     #[test_case("true", true; "base true")]
     #[test_case("false", false; "base false")]
     #[test_case("!true", false; "bang true")]
@@ -384,5 +472,17 @@ addTwo(2);",
             Object::Boolean(b) => assert_eq!(*b, exp),
             n @ _ => panic!("expected bool object, got {:#?}", n),
         }
+    }
+
+    #[test_case(
+        r#"[1, 1 * 3, "hello"]"#, 
+        Object::Array(vec!(
+                Rc::new(Object::Int(1)),
+                Rc::new(Object::Int(3)),
+                Rc::new(Object::Str("hello".to_string()))
+        )); "mixed vec"
+    )]
+    fn test_array_literal(input: &str, exp: Object) {
+        assert_eq!(*get_eval_output(input.to_string()), exp);
     }
 }

@@ -16,6 +16,7 @@ fn main() {
         println!("No previous history.");
     }
     println!("Welcome to the RSMonkey programming language");
+    println!("Press CTRL-c to exit.");
     loop {
         let readline = rl.readline(PROMPT);
         match readline {

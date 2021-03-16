@@ -47,6 +47,25 @@ impl Lexer {
         i.iter().collect()
     }
 
+    fn read_string(&mut self) -> String {
+        let mut i: Vec<char> = Vec::new();
+        loop {
+            match self.peek() {
+                Some(c) if *c == '"' => {
+                    let _ = self.next();
+                    break;
+                },
+                Some(_) => {
+                    i.push(*self.next().unwrap());
+                },
+                None => {
+                    break;
+                },
+            };
+        }
+        i.iter().collect()
+    }
+
     pub fn next_token(&mut self) -> Token {
         match self.next() {
             Some(c) => match *c {
@@ -68,6 +87,9 @@ impl Lexer {
                 '+' => Token::new(TokenKind::Plus, c.to_string()),
                 '{' => Token::new(TokenKind::LBrace, c.to_string()),
                 '}' => Token::new(TokenKind::RBrace, c.to_string()),
+                '[' => Token::new(TokenKind::LBracket, c.to_string()),
+                ']' => Token::new(TokenKind::RBracket, c.to_string()),
+                ':' => Token::new(TokenKind::Colon, c.to_string()),
                 '-' => Token::new(TokenKind::Minus, c.to_string()),
                 '!' => match self.peek() {
                     Some(pc) => match *pc {
@@ -84,6 +106,10 @@ impl Lexer {
                 '/' => Token::new(TokenKind::Slash, c.to_string()),
                 '<' => Token::new(TokenKind::LT, c.to_string()),
                 '>' => Token::new(TokenKind::GT, c.to_string()),
+                '"' => {
+                    let literal = self.read_string();
+                    Token::new(TokenKind::Str, literal)
+                },
                 _ if c.is_whitespace() => self.next_token(),
                 _ if c.is_alphabetic() => {
                     let literal = self.read_identifier();
@@ -131,8 +157,8 @@ mod tests {
 
     #[test]
     fn test_operators() {
-        let i = "!-/*5;
-5 < 10 > != 5 ==;"
+        let i = r#"!-/*5;
+5 < 10 > != 5 ==;"foobar" "foo bar";[1, 2];:;"#
             .to_string();
 
         let mut l = Lexer::new(i);
@@ -150,6 +176,17 @@ mod tests {
             TokenKind::NEQ,
             TokenKind::Int,
             TokenKind::EQ,
+            TokenKind::Semicolon,
+            TokenKind::Str,
+            TokenKind::Str,
+            TokenKind::Semicolon,
+            TokenKind::LBracket,
+            TokenKind::Int,
+            TokenKind::Comma,
+            TokenKind::Int,
+            TokenKind::RBracket,
+            TokenKind::Semicolon,
+            TokenKind::Colon,
             TokenKind::Semicolon,
         ];
 
