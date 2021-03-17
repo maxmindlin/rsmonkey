@@ -8,8 +8,14 @@ edition = "2018"
 [workspace]
 members = [
 	"rsmonkey-parser",
-	"rsmonkey-repl",
 	"rsmonkey-eval"
 ]
 
+[[bin]]
+name = "repl"
+path = "rsmonkey-repl/src/main.rs"
+
 [dependencies]
+rsmonkey-parser = { path = "./rsmonkey-parser" }
+rsmonkey-eval = { path = "./rsmonkey-eval" }
+rustyline = "8.0.0"

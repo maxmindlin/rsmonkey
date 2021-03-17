@@ -1,5 +1,7 @@
 use crate::lexer::TokenKind;
 use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 
 pub enum NodeKind {
     Program(Program),
@@ -17,14 +19,14 @@ impl Program {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum StmtKind {
     Let(Identifier, Option<ExprKind>),
     Return(Option<ExprKind>),
     Expr(ExprKind),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum ExprKind {
     Ident(Identifier),
     Int(i64),
@@ -38,6 +40,7 @@ pub enum ExprKind {
     Fn(Vec<Identifier>, BlockStmt),
     // func & arguments
     Call(Box<ExprKind>, Box<Vec<ExprKind>>),
+    Hash(Box<HashLiteral>),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -51,7 +54,7 @@ impl Identifier {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct BlockStmt {
     pub stmts: Vec<StmtKind>,
 }
@@ -59,6 +62,17 @@ pub struct BlockStmt {
 impl BlockStmt {
     pub fn new(stmts: Vec<StmtKind>) -> Self {
         Self { stmts }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct HashLiteral {
+    pub pairs: HashMap<ExprKind, ExprKind>,
+}
+
+impl Hash for HashLiteral {
+    fn hash<H: Hasher>(&self, _: &mut H) {
+        panic!("unsupported");
     }
 }
 
@@ -129,6 +143,13 @@ impl fmt::Display for ExprKind {
                     .collect::<Vec<String>>()
                     .join(",");
                 write!(f, "{})", a_str)
+            }
+            Self::Hash(literal) => {
+                let body = literal.pairs.iter()
+                    .map(|(o1, o2)| format!("{}:{}", o1, o2))
+                    .collect::<Vec<String>>()
+                    .join(",");
+                write!(f, "{{{}}}", body)
             }
         }
     }

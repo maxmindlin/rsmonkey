@@ -158,6 +158,11 @@ dependencies = [
 [[package]]
 name = "rsmonkey"
 version = "0.1.0"
+dependencies = [
+ "rsmonkey-eval",
+ "rsmonkey-parser",
+ "rustyline",
+]
 
 [[package]]
 name = "rsmonkey-eval"
@@ -172,15 +177,6 @@ name = "rsmonkey-parser"
 version = "0.1.0"
 dependencies = [
  "test-case",
-]
-
-[[package]]
-name = "rsmonkey-repl"
-version = "0.1.0"
-dependencies = [
- "rsmonkey-eval",
- "rsmonkey-parser",
- "rustyline",
 ]
 
 [[package]]

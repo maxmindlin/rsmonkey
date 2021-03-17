@@ -1,7 +1,9 @@
 mod ast;
 mod lexer;
 
-pub use ast::{BlockStmt, ExprKind, Identifier, NodeKind, Program, StmtKind};
+use std::collections::HashMap;
+
+pub use ast::{BlockStmt, ExprKind, Identifier, NodeKind, Program, StmtKind, HashLiteral};
 pub use lexer::{Lexer, Token, TokenKind};
 
 type PrefixParseFn = fn(parser: &mut Parser) -> Option<ExprKind>;
@@ -75,6 +77,7 @@ fn map_prefix_fn(t_type: &TokenKind) -> Option<PrefixParseFn> {
         False => Some(Parser::parse_boolean),
         LParen => Some(Parser::parse_grouped_expr),
         LBracket => Some(Parser::parse_array_literal),
+        LBrace => Some(Parser::parse_hash_literal),
         If => Some(Parser::parse_if_expr),
         Function => Some(Parser::parse_fn_expr),
         Str => Some(Parser::parse_str_literal),
@@ -280,6 +283,35 @@ impl Parser {
     fn parse_call_expr(&mut self, func: ExprKind) -> Option<ExprKind> {
         let args = self.parse_expr_list(TokenKind::RParen).ok()?;
         Some(ExprKind::Call(Box::new(func), args))
+    }
+
+    fn parse_hash_literal(&mut self) -> Option<ExprKind> {
+        let mut hash = HashMap::new();
+        while self.peek_token.t_type != TokenKind::RBrace {
+            self.next_token();
+            let key = self.parse_expression(Precendence::Lowest)?;
+
+            if !self.expect_peek(TokenKind::Colon) {
+                return None;
+            }
+
+            self.next_token();
+            let val = self.parse_expression(Precendence::Lowest)?;
+            hash.insert(key, val);
+
+            if self.peek_token.t_type != TokenKind::RBrace
+                && !self.expect_peek(TokenKind::Comma)
+            {
+                return None;
+            }
+        }
+
+        if !self.expect_peek(TokenKind::RBrace) {
+            return None;
+        }
+
+        let literal = HashLiteral { pairs: hash };
+        Some(ExprKind::Hash(Box::new(literal)))
     }
 
     fn parse_expr_list(&mut self, end: TokenKind) -> Result<Box<Vec<ExprKind>>, ()> {

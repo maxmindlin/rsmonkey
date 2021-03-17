@@ -2,8 +2,8 @@ mod env;
 mod object;
 
 pub use env::Env;
-use object::{BuiltinKind, EvalError, FuncLiteral, Object};
-use rsmonkey_parser::{BlockStmt, ExprKind, Identifier, NodeKind, Program, StmtKind, TokenKind};
+use object::{BuiltinKind, EvalError, FuncLiteral, Object, MHash};
+use rsmonkey_parser::{BlockStmt, ExprKind, Identifier, NodeKind, Program, StmtKind, TokenKind, HashLiteral};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -113,21 +113,51 @@ fn eval_expr(expr: &ExprKind, env: EnvPointer) -> Rc<Object> {
             if let Object::Error(_) = *index {
                 return index;
             }
-            eval_index_expr(&lhs, &index)
-        }
+            eval_index_expr(&lhs, index)
+        },
+        Hash(literal) => eval_hash_literal(literal, env),
     }
 }
 
-fn eval_index_expr(lhs: &Object, index: &Object) -> Rc<Object> {
+fn eval_hash_literal(hash: &HashLiteral, env: EnvPointer) -> Rc<Object> {
+    let mut mhash = MHash::default();
+    for (key_node, val_node) in &hash.pairs {
+        let key = eval_expr(key_node, Rc::clone(&env));
+        if let Object::Error(_) = *key {
+            return key;
+        }
+        let val = eval_expr(val_node, Rc::clone(&env));
+        if let Object::Error(_) = *val {
+            return val;
+        }
+        // hard code for non-valid key types.
+        match &*key {
+            Object::Func(_) |
+                Object::Hash(_) => return new_error_pntr(EvalError::InvalidUsage("invalid hash key type".to_string())),
+            _ => mhash.pairs.insert(key, val),
+        };
+    }
+    Rc::new(Object::Hash(mhash))
+}
+
+fn eval_index_expr(lhs: &Object, index: Rc<Object>) -> Rc<Object> {
     use Object::*;
-    match (lhs, index) {
+    match (lhs, &index) {
         (Array(a), _) => eval_array_index(a, index),
+        (Hash(h), _) => eval_hash_index(h, index),
         _ => new_error_pntr(EvalError::InvalidIndexOp((*lhs).clone())),
     }
 }
 
-fn eval_array_index(array: &Vec<Rc<Object>>, index: &Object) -> Rc<Object> {
-    match index {
+fn eval_hash_index(hash: &MHash, index: Rc<Object>) -> Rc<Object> {
+    match hash.pairs.get(&index) {
+        None => Rc::new(Object::Null),
+        Some(o) => Rc::clone(o),
+    }
+}
+
+fn eval_array_index(array: &Vec<Rc<Object>>, index: Rc<Object>) -> Rc<Object> {
+    match &*index {
         Object::Int(i) => match i {
             _ if *i < 0 => Rc::new(Object::Null),
             _ => match array.get(*i as usize) {
@@ -483,6 +513,21 @@ addTwo(2);",
         )); "mixed vec"
     )]
     fn test_array_literal(input: &str, exp: Object) {
+        assert_eq!(*get_eval_output(input.to_string()), exp);
+    }
+
+    #[test_case(
+        r#"{ "one": 10 - 1, true: "true" };"#,
+        Object::Hash(
+            MHash {
+                pairs: [
+                    (Rc::new(Object::Str("one".to_string())), Rc::new(Object::Int(9))),
+                    (Rc::new(Object::Boolean(true)), Rc::new(Object::Str("true".to_string()))),
+                ].iter().cloned().collect()
+            }
+        ); "basic hash"
+    )]
+    fn test_hash_obj(input: &str, exp: Object) {
         assert_eq!(*get_eval_output(input.to_string()), exp);
     }
 }

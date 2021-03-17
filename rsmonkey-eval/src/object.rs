@@ -2,8 +2,10 @@ use crate::{EnvPointer, new_error_pntr};
 use rsmonkey_parser::{BlockStmt, Identifier, TokenKind};
 use std::fmt;
 use std::rc::Rc;
+use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum EvalError {
     TypeMismatch(TokenKind, Object, Object),
     InvalidUsage(String),
@@ -33,7 +35,7 @@ impl fmt::Display for EvalError {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Object {
     Array(Vec<Rc<Object>>),
     Int(i64),
@@ -44,6 +46,7 @@ pub enum Object {
     Func(Rc<FuncLiteral>),
     Null,
     Error(Rc<EvalError>),
+    Hash(MHash),
 }
 
 impl Object {
@@ -70,17 +73,26 @@ impl Object {
                     .collect::<Vec<String>>()
                     .join(",");
                 format!("fn ({}) {{\n{}\n}}", p_str, fn_lit.body)
+            },
+            Hash(literal) => {
+                let body = literal.pairs.iter()
+                    .map(|(o1, o2)| format!("{}:{}", o1, o2))
+                    .collect::<Vec<String>>()
+                    .join(",");
+                format!("{{{}}}", body)
             }
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum BuiltinKind {
     Len,
     First,
     Last,
     Rest,
+    Push,
+    Puts,
 }
 
 impl BuiltinKind {
@@ -91,6 +103,8 @@ impl BuiltinKind {
             "first" => Some(First),
             "last" => Some(Last),
             "rest" => Some(Rest),
+            "push" => Some(Push),
+            "puts" => Some(Puts),
             _ => None,
         }
     }
@@ -183,6 +197,29 @@ impl BuiltinKind {
                     )))
                 }
             }
+            Push => {
+                if let Err(eo) = self.check_arg_len(args, 2) {
+                    return Rc::new(eo);
+                }
+                let first = Rc::clone(args.first().unwrap());
+                let second = Rc::clone(args.get(1).unwrap());
+                match &*first {
+                    Object::Array(a) => {
+                        let mut clone = a.clone();
+                        clone.push(second);
+                        Rc::new(Object::Array(clone))
+                    }
+                    _ => new_error_pntr(EvalError::InvalidUsage(format!(
+                        "{} does not support type {}",
+                        self.to_string(),
+                        first,
+                    )))
+                }
+            }
+            Puts => {
+                args.iter().for_each(|a| println!("{}", a));
+                Rc::new(Object::Null)
+            }
         }
     }
 }
@@ -195,7 +232,20 @@ impl ToString for BuiltinKind {
             First => "first".to_string(),
             Last => "last".to_string(),
             Rest => "rest".to_string(),
+            Push => "push".to_string(),
+            Puts => "puts".to_string(),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+pub struct MHash {
+    pub pairs: HashMap<Rc<Object>, Rc<Object>>,
+}
+
+impl Hash for MHash {
+    fn hash<H: Hasher>(&self, _: &mut H) {
+        panic!("hash for hash not supported");
     }
 }
 
@@ -204,6 +254,12 @@ pub struct FuncLiteral {
     pub params: Vec<Identifier>,
     pub body: BlockStmt,
     pub env: EnvPointer,
+}
+
+impl Hash for FuncLiteral {
+    fn hash<H: Hasher>(&self, _: &mut H) {
+        panic!("hash for func not supported");
+    }
 }
 
 impl FuncLiteral {
